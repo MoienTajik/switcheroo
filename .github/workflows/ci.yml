@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mkcert and trust a local CA
+        run: |
+          brew install mkcert
+          mkcert -install   # lets the HTTPS-decryption tests run; they skip gracefully if this fails
+
+      - name: Build and run the end-to-end tests
+        run: ./test.sh

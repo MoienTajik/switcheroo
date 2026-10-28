@@ -1,0 +1,10 @@
+# build output
+Switcheroo.app/
+dist/
+.notarize-app.zip
+
+# per-machine runtime data
+certs/
+mappings.json
+
+.DS_Store
