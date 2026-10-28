@@ -73,18 +73,6 @@ Needs Xcode's command‑line tools and, to bundle mkcert, `brew install mkcert`.
 
 `make-dmg.sh` signs with a Developer ID and, when notarization credentials are available, notarizes and staples both the app and the DMG. Set `SIGN_ID` to your identity; `SIGN_ID="-" ./make-dmg.sh` falls back to an ad‑hoc signature for local use.
 
-### Releasing
-
-Push a `vX.Y.Z` tag (matching `VERSION`) and the [release workflow](.github/workflows/release.yml) builds, signs, notarizes, and publishes a GitHub Release with the DMG. It needs these repository secrets:
-
-| Secret | What |
-| --- | --- |
-| `MACOS_CERT_P12_BASE64` | Your *Developer ID Application* certificate + key, exported as `.p12` and base64‑encoded |
-| `MACOS_CERT_PASSWORD` | Password you set on that `.p12` |
-| `NOTARY_APPLE_ID` | Apple ID for notarization |
-| `NOTARY_PASSWORD` | An [app‑specific password](https://appleid.apple.com) for that Apple ID |
-| `NOTARY_TEAM_ID` | Your team ID (`BJ7A45T36J`) |
-
 ## Credits
 
 Local certificates by [mkcert](https://github.com/FiloSottile/mkcert) (BSD‑3‑Clause), bundled in the app.
