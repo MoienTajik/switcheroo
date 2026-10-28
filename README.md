@@ -14,6 +14,16 @@ Grab the latest `Switcheroo.dmg` from [**Releases**](https://github.com/MoienTaj
 
 The app is signed with a Developer ID and notarized by Apple, so it opens with a normal first‑launch prompt. **Apple Silicon, macOS 15 or later.**
 
+### Verify your download
+
+Every release is built, signed, and notarized by GitHub Actions from the tagged source — not on anyone's laptop. Each release includes a `SHA256SUMS.txt` and a signed build‑provenance attestation, so you can check the DMG is the one this repo's workflow produced:
+
+```bash
+shasum -a 256 -c SHA256SUMS.txt                                  # checksum matches
+gh attestation verify Switcheroo-1.0.1.dmg --repo MoienTajik/switcheroo   # built by this repo's CI
+spctl -a -vvv -t open --context context:primary-signature Switcheroo-1.0.1.dmg   # Apple-notarized
+```
+
 ## Use it
 
 Add a pair in the window:
