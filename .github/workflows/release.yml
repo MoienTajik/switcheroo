@@ -6,7 +6,9 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: write   # create the GitHub Release and upload the DMG
+  contents: write       # create the GitHub Release and upload assets
+  id-token: write       # sign the build-provenance attestation
+  attestations: write   # record it
 
 jobs:
   release:
@@ -64,10 +66,22 @@ jobs:
           NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
         run: ./make-dmg.sh
 
+      - name: Generate SHA-256 checksums
+        if: steps.gate.outputs.ready == 'true'
+        run: (cd dist && shasum -a 256 Switcheroo-*.dmg | tee SHA256SUMS.txt)
+
+      - name: Attest build provenance
+        if: steps.gate.outputs.ready == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/Switcheroo-*.dmg
+
       - name: Publish the GitHub Release
         if: steps.gate.outputs.ready == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/Switcheroo-*.dmg
+          files: |
+            dist/Switcheroo-*.dmg
+            dist/SHA256SUMS.txt
           generate_release_notes: true
           fail_on_unmatched_files: true
