@@ -20,11 +20,11 @@ RUNTIME=""; [ "$SIGN_ID" = "-" ] || RUNTIME="--options runtime --timestamp"
 codesign --force $RUNTIME --sign "$SIGN_ID" "$APP"
 codesign --verify --strict "$APP"
 
-# Notary credentials: explicit Apple-ID creds (CI secrets) win, else a stored keychain profile (local).
+# Notary credentials: an App Store Connect API key (CI) wins, else a stored keychain profile (local).
 NOTARY_AUTH=()
 if [ "$SIGN_ID" != "-" ]; then
-  if [ -n "${NOTARY_APPLE_ID:-}" ] && [ -n "${NOTARY_PASSWORD:-}" ]; then
-    NOTARY_AUTH=(--apple-id "$NOTARY_APPLE_ID" --password "$NOTARY_PASSWORD" --team-id "${NOTARY_TEAM_ID:-BJ7A45T36J}")
+  if [ -n "${NOTARY_KEY_PATH:-}" ] && [ -n "${NOTARY_KEY_ID:-}" ] && [ -n "${NOTARY_ISSUER_ID:-}" ]; then
+    NOTARY_AUTH=(--key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
   elif xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" >/dev/null 2>&1; then
     NOTARY_AUTH=(--keychain-profile "$NOTARY_PROFILE")
   fi
