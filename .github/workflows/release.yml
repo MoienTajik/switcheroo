@@ -82,9 +82,11 @@ jobs:
       - name: Verify the result is notarized and passes Gatekeeper
         if: steps.gate.outputs.ready == 'true'
         run: |
+          # Both checks can consult Apple's servers, so retry a few times before treating a failure as real.
           dmg="$(ls dist/Switcheroo-*.dmg)"
-          xcrun stapler validate "$dmg"
-          spctl -a -vvv -t open --context context:primary-signature "$dmg"
+          retry() { for i in 1 2 3 4 5; do "$@" && return 0; echo "attempt $i failed, retrying..."; sleep 15; done; return 1; }
+          retry xcrun stapler validate "$dmg"
+          retry spctl -a -vvv -t open --context context:primary-signature "$dmg"
 
       - name: Generate SHA-256 checksums
         if: steps.gate.outputs.ready == 'true'
@@ -107,7 +109,7 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Keep the dry-run build as an artifact
-        if: steps.gate.outputs.ready == 'true' && env.PUBLISH != 'true'
+        if: always() && steps.gate.outputs.ready == 'true' && env.PUBLISH != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: switcheroo-dry-run
