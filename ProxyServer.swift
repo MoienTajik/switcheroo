@@ -14,6 +14,9 @@ final class ProxyServer {
     private var listener: NWListener?
     private var decrypters: [String: Decrypter] = [:]
     private let lock = NSLock()
+    /// Every live client session. Only touched on `queue`. The sweeper closes the ones that have gone quiet.
+    private var sessions: [ObjectIdentifier: ClientSession] = [:]
+    private var sweeper: DispatchSourceTimer?
 
     init(store: MappingStore, port: UInt16 = Config.port, certDir: String = Config.certsDir) {
         self.store = store
@@ -21,7 +24,29 @@ final class ProxyServer {
         self.certDir = certDir
     }
 
+    func register(_ s: ClientSession) { sessions[ObjectIdentifier(s)] = s }
+    func unregister(_ s: ClientSession) { sessions[ObjectIdentifier(s)] = nil }
+
+    /// Closes sessions that have been silent longer than their limit. Without this, a peer that never answers
+    /// a close (an idle browser connection, a stalled server) would hold two sockets open forever.
+    private func startSweeper() {
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + 2, repeating: 2)
+        t.setEventHandler { [weak self] in
+            guard let self else { return }
+            for s in Array(self.sessions.values) where s.idleFor > s.idleLimit { s.closeAll() }
+        }
+        t.resume()
+        sweeper = t
+    }
+
     func start() throws {
+        // A busy proxy holds two sockets per connection; macOS's default soft limit is low.
+        var rl = rlimit()
+        if getrlimit(RLIMIT_NOFILE, &rl) == 0 {
+            rl.rlim_cur = min(rl.rlim_max, 10240)
+            setrlimit(RLIMIT_NOFILE, &rl)
+        }
         let params = NWParameters.tcp
         params.allowLocalEndpointReuse = true
         params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
@@ -43,9 +68,12 @@ final class ProxyServer {
         if ready.wait(timeout: .now() + 5) == .timedOut { throw SwitcherooError("The proxy didn't start listening on port \(port).") }
         if let f = failure { throw f }
         listener = l
+        startSweeper()
     }
 
     func stop() {
+        sweeper?.cancel()
+        queue.async { for s in Array(self.sessions.values) { s.closeAll() } }
         listener?.cancel()
         lock.lock(); let all = Array(decrypters.values); decrypters = [:]; lock.unlock()
         all.forEach { $0.cancel() }
@@ -146,15 +174,16 @@ final class Decrypter {
 
 /// Copies bytes one way until the sender finishes. The caller decides what ending means.
 enum Pump {
-    static func run(_ from: NWConnection, _ to: NWConnection, onEnd: @escaping (_ clean: Bool) -> Void) {
+    static func run(_ from: NWConnection, _ to: NWConnection, onData: @escaping () -> Void, onEnd: @escaping (_ clean: Bool) -> Void) {
         from.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, complete, error in
             if let data, !data.isEmpty {
+                onData()
                 to.send(content: data, completion: .contentProcessed { err in
-                    if err != nil { onEnd(false) } else if complete { onEnd(true) } else { run(from, to, onEnd: onEnd) }
+                    if err != nil { onEnd(false) } else if complete { onEnd(true) } else { run(from, to, onData: onData, onEnd: onEnd) }
                 })
             } else if error != nil { onEnd(false) }
             else if complete { onEnd(true) }
-            else { run(from, to, onEnd: onEnd) }
+            else { run(from, to, onData: onData, onEnd: onEnd) }
         }
     }
 }
@@ -171,6 +200,14 @@ final class ClientSession {
     private let mode: Mode
     private var buffer = Data()
 
+    // Lifetime: the server sweeps sessions that stay silent past `idleLimit` and closes both sockets.
+    private var peer: NWConnection?
+    private var lastActivity = Date()
+    var idleLimit: TimeInterval = 60   // until a request head arrives; raised once there's real traffic
+    var idleFor: TimeInterval { Date().timeIntervalSince(lastActivity) }
+    func touch() { lastActivity = Date() }
+    func closeAll() { conn.cancel(); peer?.cancel() }
+
     init(conn: NWConnection, server: ProxyServer, mode: Mode) {
         self.conn = conn
         self.server = server
@@ -178,10 +215,14 @@ final class ClientSession {
     }
 
     func start() {
+        server.register(self)
         conn.stateUpdateHandler = { [self] state in
             switch state {
-            case .failed: conn.cancel()
-            case .cancelled: conn.stateUpdateHandler = nil
+            case .failed: closeAll()
+            case .cancelled:
+                peer?.cancel()
+                conn.stateUpdateHandler = nil
+                server.unregister(self)
             default: break
             }
         }
@@ -191,7 +232,7 @@ final class ClientSession {
 
     private func readHead() {
         conn.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [self] data, _, complete, error in
-            if let data { buffer.append(data) }
+            if let data { buffer.append(data); touch() }
             if let (head, rest) = HTTP.splitHead(buffer) {
                 guard let req = HTTP.parseRequest(head) else { return reply(400, "Bad request") }
                 handle(req, rest: rest)
@@ -233,6 +274,8 @@ final class ClientSession {
         let params: NWParameters = tls ? .tls : .tcp
         params.preferNoProxies = true   // we ARE the system proxy: never loop back into ourselves
         let up = NWConnection(host: NWEndpoint.Host(host), port: p, using: params)
+        peer = up
+        touch()
         let request = HTTP.upstreamRequest(req, path: path, host: hostHeader) + rest
         var started = false
 
@@ -240,9 +283,16 @@ final class ClientSession {
             switch state {
             case .ready where !started:
                 started = true
+                // ponytail: 10 min silence ceiling for a response in flight (covers long polls); lower it if you need tighter.
+                idleLimit = 600
+                touch()
                 up.send(content: request, completion: .contentProcessed { _ in })
-                // The rest of the request body (if any) flows on to the upstream; the client closing early aborts both.
-                Pump.run(conn, up) { clean in if !clean { up.cancel(); self.conn.cancel() } }
+                // The rest of the request body (if any) flows on to the upstream. If the client goes away, give the
+                // response a grace period and then drop everything, rather than waiting on an upstream forever.
+                Pump.run(conn, up, onData: { self.touch() }, onEnd: { clean in
+                    if !clean { up.cancel(); self.conn.cancel() }
+                    else { self.idleLimit = Config.halfCloseGrace; self.touch() }
+                })
                 relayResponse(from: up, swapped: swapped)
             case .waiting(let e), .failed(let e):
                 if !started {
@@ -265,17 +315,17 @@ final class ClientSession {
         var acc = Data()
         func more() {
             up.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [self] data, _, complete, error in
-                if let data { acc.append(data) }
+                if let data { acc.append(data); touch() }
                 if let (head, rest) = HTTP.splitHead(acc) {
                     let out = HTTP.clientResponseHead(head, swappedTo: swapped) + rest
                     conn.send(content: out, completion: .contentProcessed { [self] err in
                         if err != nil { up.cancel(); conn.cancel(); return }
-                        Pump.run(up, conn) { _ in
+                        Pump.run(up, conn, onData: { self.touch() }, onEnd: { _ in
                             // The upstream is done (we asked it to close): end the response for the client.
                             self.conn.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in
                                 self.conn.cancel(); up.cancel()
                             })
-                        }
+                        })
                     })
                 } else if complete || error != nil {
                     up.cancel()
@@ -316,6 +366,8 @@ final class ClientSession {
 
     /// Answers the CONNECT, then copies bytes both ways, closing each direction as its sender finishes.
     private func tunnel(to up: NWConnection, initial: Data) {
+        peer = up
+        touch()
         var started = false
         up.stateUpdateHandler = { [self] state in
             switch state {
@@ -323,16 +375,25 @@ final class ClientSession {
                 started = true
                 conn.send(content: Data("HTTP/1.1 200 Connection Established\r\n\r\n".utf8), completion: .contentProcessed { [self] _ in
                     if !initial.isEmpty { up.send(content: initial, completion: .contentProcessed { _ in }) }
+                    // ponytail: a tunnel silent for 15 min is closed (browsers reconnect); raise if a long-idle protocol needs it.
+                    self.idleLimit = 900
+                    self.touch()
                     var ended = 0
                     func finished(to: NWConnection) -> (Bool) -> Void {
                         return { clean in
-                            if clean { to.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in }) }
+                            if clean {
+                                to.send(content: nil, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in })
+                                // The other side now has a short grace to answer our close; if it never does, the
+                                // sweeper drops both sockets instead of leaving them half-closed forever.
+                                self.idleLimit = Config.halfCloseGrace
+                                self.touch()
+                            }
                             ended += clean ? 1 : 2
                             if ended >= 2 { self.conn.cancel(); up.cancel() }
                         }
                     }
-                    Pump.run(conn, up, onEnd: finished(to: up))
-                    Pump.run(up, conn, onEnd: finished(to: conn))
+                    Pump.run(conn, up, onData: { self.touch() }, onEnd: finished(to: up))
+                    Pump.run(up, conn, onData: { self.touch() }, onEnd: finished(to: conn))
                 })
             case .waiting(let e), .failed(let e):
                 if !started { started = true; up.cancel(); reply(502, "Switcheroo: can't connect: \(e)") } else { up.cancel(); conn.cancel() }

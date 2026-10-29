@@ -19,6 +19,11 @@ enum Config {
     static var mappingsFile: String { support + "/mappings.json" }
     static var certsDir: String { support + "/certs" }
 
+    /// How long a connection may stay open, silent, after one side has closed. Browsers and servers that don't
+    /// answer a close within this are abandoned, so half-closed sockets can't pile up. SWITCHEROO_GRACE (seconds)
+    /// overrides it for the tests.
+    static let halfCloseGrace: TimeInterval = TimeInterval(ProcessInfo.processInfo.environment["SWITCHEROO_GRACE"] ?? "") ?? 30
+
     /// GitHub repo for the auto-updater (owner/name).
     static let repo = "MoienTajik/switcheroo"
     /// This build's version, from Info.plist (CFBundleShortVersionString).

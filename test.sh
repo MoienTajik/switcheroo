@@ -13,7 +13,7 @@ swiftc main.swift Config.swift Mappings.swift HTTP.swift ProxyServer.swift CLI.s
 
 PORT=$((RANDOM % 20000 + 30000))
 while nc -z 127.0.0.1 "$PORT" 2>/dev/null; do PORT=$((RANDOM % 20000 + 30000)); done
-export SWITCHEROO_HOME="$TMP/home" SWITCHEROO_PORT="$PORT" NO_COLOR=1
+export SWITCHEROO_HOME="$TMP/home" SWITCHEROO_PORT="$PORT" SWITCHEROO_GRACE=2 NO_COLOR=1
 PROXY="http://127.0.0.1:$PORT"
 mkdir -p "$SWITCHEROO_HOME"
 
@@ -83,6 +83,39 @@ if command -v mkcert >/dev/null && [ -f "$CAROOT/rootCA.pem" ]; then
 else
   echo "  skip  mapped-host HTTPS (needs mkcert and its CA: run 'mkcert -install')"
 fi
+
+echo "Connection hygiene (regression: half-closed tunnels used to leak until the proxy ran out of sockets)"
+UP=$((PORT + 1))
+python3 - "$UP" <<'PY' &
+import socket, sys
+s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", int(sys.argv[1]))); s.listen(128)
+while True:
+    c, _ = s.accept(); c.close()      # an upstream that hangs up immediately
+PY
+UPPID=$!
+sleep 0.7
+socks() { lsof -nP -a -p "$PID" -iTCP 2>/dev/null | wc -l | tr -d ' '; }
+base=$(socks)
+# 40 clients that send a CONNECT and then ignore everything, including the proxy's close (like a browser's idle socket)
+python3 - "$PORT" "$UP" 40 9 <<'PY' &
+import socket, sys, time
+port, up, n, hold = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]), float(sys.argv[4])
+held = []
+for _ in range(n):
+    c = socket.create_connection(("127.0.0.1", port))
+    c.sendall(("CONNECT 127.0.0.1:%d HTTP/1.1\r\nHost: x\r\n\r\n" % up).encode())
+    held.append(c)                    # never read, never close
+time.sleep(hold)
+PY
+HOLDPID=$!
+sleep 1.2; during=$(socks)
+sleep 5.5    # the grace period is 2 s here: the proxy must let go even though every client keeps its end open
+after=$(socks)
+{ kill "$UPPID" "$HOLDPID"; wait "$UPPID" "$HOLDPID"; } 2>/dev/null
+[ $((during - base)) -ge 20 ] && ok "load was applied ($((during - base)) extra sockets while tunnels were open)" || fail "test load didn't register (base $base, during $during)"
+[ $((after - base)) -lt 8 ] && ok "tunnels the peer never closes are dropped after the grace period (sockets: $base -> $during -> $after)" || fail "sockets leaked: $base -> $during -> $after"
+has "proxy still serves after the burst" "FindProxyForURL" "$(curlx "$PROXY/proxy.pac")"
 
 echo "Persistence and a second instance"
 before="$(sw list --json)"
