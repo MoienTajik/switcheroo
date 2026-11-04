@@ -238,17 +238,17 @@
       <a href="#faq">FAQ</a>
       <a href="https://github.com/MoienTajik/switcheroo">GitHub</a>
     </div>
-    <a class="btn btn-primary btn-sm" href="https://github.com/MoienTajik/switcheroo/releases/latest">Download</a>
+    <a class="btn btn-primary btn-sm" data-dmg href="https://github.com/MoienTajik/switcheroo/releases/download/v1.0.1/Switcheroo-1.0.1.dmg">Download</a>
   </div>
 </nav>
 
 <header class="hero">
   <div class="wrap">
-    <a class="pill" href="https://github.com/MoienTajik/switcheroo/releases/latest"><b>v1.0.1</b> Free &amp; open source →</a>
+    <a class="pill" href="https://github.com/MoienTajik/switcheroo/releases/latest"><b id="version">v1.0.1</b> Free &amp; open source →</a>
     <h1>Swap any URL.<br>Keep the <span class="swap">address bar</span>.</h1>
     <p class="lede">Make a real website load your local build, on your Mac only. No DNS, no <code>/etc/hosts</code>, no browser extension. Just one tiny native app.</p>
     <div class="ctas">
-      <a class="btn btn-primary" href="https://github.com/MoienTajik/switcheroo/releases/latest">
+      <a class="btn btn-primary" data-dmg href="https://github.com/MoienTajik/switcheroo/releases/download/v1.0.1/Switcheroo-1.0.1.dmg">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.37 12.77c-.02-2.3 1.88-3.4 1.97-3.46-1.07-1.57-2.74-1.78-3.33-1.8-1.42-.14-2.77.84-3.49.84-.72 0-1.83-.82-3.01-.8-1.55.02-2.98.9-3.78 2.29-1.61 2.8-.41 6.94 1.16 9.21.77 1.11 1.68 2.36 2.88 2.31 1.16-.05 1.59-.75 2.99-.75 1.4 0 1.79.75 3.01.72 1.24-.02 2.03-1.13 2.79-2.25.88-1.29 1.24-2.54 1.26-2.6-.03-.01-2.42-.93-2.45-3.71zM14.08 6.02c.64-.77 1.07-1.85.95-2.92-.92.04-2.03.61-2.69 1.38-.59.68-1.11 1.77-.97 2.82 1.03.08 2.07-.52 2.71-1.28z"/></svg>
         Download for Mac
       </a>
@@ -452,7 +452,7 @@ System proxy off.</pre>
     <h2>Your build. Their URL.</h2>
     <p class="sub" style="margin:0 auto">Free, open source, and about a minute to set up.</p>
     <div class="ctas">
-      <a class="btn btn-primary" href="https://github.com/MoienTajik/switcheroo/releases/latest">Download for Mac</a>
+      <a class="btn btn-primary" data-dmg href="https://github.com/MoienTajik/switcheroo/releases/download/v1.0.1/Switcheroo-1.0.1.dmg">Download for Mac</a>
       <a class="btn btn-ghost" href="https://github.com/MoienTajik/switcheroo">Star on GitHub</a>
     </div>
   </div>
@@ -470,6 +470,13 @@ System proxy off.</pre>
 </footer>
 
 <script>
+  // Download buttons default to the DMG above; point them at the newest release when GitHub answers
+  fetch('https://api.github.com/repos/MoienTajik/switcheroo/releases/latest').then(r => r.json()).then(rel => {
+    const dmg = rel.assets.find(a => a.name.endsWith('.dmg'));
+    document.querySelectorAll('[data-dmg]').forEach(a => a.href = dmg.browser_download_url);
+    document.getElementById('version').textContent = rel.tag_name;
+  }).catch(() => {});
+
   // Nav border on scroll
   const nav = document.getElementById('nav');
   addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 8), { passive: true });
