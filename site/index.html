@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Switcheroo — Swap any URL for your local build</title>
-<meta name="description" content="Make any URL — even a real website — serve your local content, on your Mac only. No DNS, no /etc/hosts, no browser extension.">
+<title>Switcheroo: Swap any URL for your local build</title>
+<meta name="description" content="Make any URL, even a real website, serve your local content, on your Mac only. No DNS, no /etc/hosts, no browser extension.">
 <link rel="icon" href="icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -244,9 +244,9 @@
 
 <header class="hero">
   <div class="wrap">
-    <a class="pill" href="https://github.com/MoienTajik/switcheroo/releases/latest"><b>v1.0.1</b> Signed, notarized, free &amp; open source →</a>
+    <a class="pill" href="https://github.com/MoienTajik/switcheroo/releases/latest"><b>v1.0.1</b> Free &amp; open source →</a>
     <h1>Swap any URL.<br>Keep the <span class="swap">address bar</span>.</h1>
-    <p class="lede">Make a real website load your local build — on your Mac only. No DNS, no <code>/etc/hosts</code>, no browser extension. Just one tiny native app.</p>
+    <p class="lede">Make a real website load your local build, on your Mac only. No DNS, no <code>/etc/hosts</code>, no browser extension. Just one tiny native app.</p>
     <div class="ctas">
       <a class="btn btn-primary" href="https://github.com/MoienTajik/switcheroo/releases/latest">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.37 12.77c-.02-2.3 1.88-3.4 1.97-3.46-1.07-1.57-2.74-1.78-3.33-1.8-1.42-.14-2.77.84-3.49.84-.72 0-1.83-.82-3.01-.8-1.55.02-2.98.9-3.78 2.29-1.61 2.8-.41 6.94 1.16 9.21.77 1.11 1.68 2.36 2.88 2.31 1.16-.05 1.59-.75 2.99-.75 1.4 0 1.79.75 3.01.72 1.24-.02 2.03-1.13 2.79-2.25.88-1.29 1.24-2.54 1.26-2.6-.03-.01-2.42-.93-2.45-3.71zM14.08 6.02c.64-.77 1.07-1.85.95-2.92-.92.04-2.03.61-2.69 1.38-.59.68-1.11 1.77-.97 2.82 1.03.08 2.07-.52 2.71-1.28z"/></svg>
@@ -257,7 +257,7 @@
         View source
       </a>
     </div>
-    <p class="fine">Apple Silicon · macOS 15 or later · Free forever</p>
+    <p class="fine">Apple Silicon · macOS 15 or later</p>
 
     <div class="stage" id="stage">
       <div class="glow"></div>
@@ -278,13 +278,13 @@
           </div>
           <div class="site local">
             <span class="tag">served by localhost:3000</span>
-            <h3>Acme Dashboard — next</h3>
+            <h3>Acme Dashboard (next)</h3>
             <p>Your local build, running on the real domain with real cookies.</p>
             <div class="blocks"><span></span><span></span><span></span></div>
           </div>
           <div class="devtools">
             <span class="hdr">Name</span><span class="hdr">Status</span><span class="hdr">x-switcheroo</span>
-            <span>app.js</span><span>200</span><span class="x" id="hdr">—</span>
+            <span>app.js</span><span>200</span><span class="x" id="hdr">-</span>
           </div>
         </div>
       </div>
@@ -327,12 +327,12 @@
     <div class="card reveal">
       <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg></div>
       <h3>Ship local builds on real domains</h3>
-      <p>Load <code>localhost:3000</code> as <code>example.com</code> — same origin, same cookies, same auth. Find the bugs staging never shows you.</p>
+      <p>Load <code>localhost:3000</code> as <code>example.com</code>: same origin, same cookies, same auth. Find the bugs staging never shows you.</p>
     </div>
     <div class="card reveal">
       <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></div>
       <h3>Patch third‑party scripts</h3>
-      <p>Swap a vendor's broken <code>widget.js</code> for your fixed copy and prove the fix live — before you file the ticket.</p>
+      <p>Swap a vendor's broken <code>widget.js</code> for your fixed copy and prove the fix live before you file the ticket.</p>
     </div>
     <div class="card reveal">
       <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h10M4 17h7"/><circle cx="18" cy="16" r="3"/></svg></div>
@@ -347,12 +347,12 @@
     <div class="reveal">
       <div class="eyebrow">How it works</div>
       <h2>A proxy that only touches what you asked it to.</h2>
-      <p class="sub">Switcheroo sets the macOS system proxy to a tiny local PAC file, so every browser picks it up — no plugins, no config.</p>
+      <p class="sub">Switcheroo sets the macOS system proxy to a tiny local PAC file, so every browser picks it up. No plugins, no config.</p>
       <ul class="checks">
-        <li><span><b>Mapped URLs are swapped</b> — cookies, compression and redirects pass through untouched.</span></li>
-        <li><span><b>Everything else is tunneled</b> — HTTPS to unmapped hosts is never decrypted.</span></li>
-        <li><span><b>HTTPS just works</b> — a local CA (mkcert, bundled) your Mac trusts, so no certificate warnings.</span></li>
-        <li><span><b>Clean exit</b> — quitting turns routing off and restores your proxy settings.</span></li>
+        <li><span><b>Mapped URLs are swapped.</b> Cookies, compression and redirects pass through untouched.</span></li>
+        <li><span><b>Everything else is tunneled.</b> HTTPS to unmapped hosts is never decrypted.</span></li>
+        <li><span><b>HTTPS just works.</b> A local CA (mkcert, bundled) your Mac trusts means no certificate warnings.</span></li>
+        <li><span><b>Clean exit.</b> Quitting turns routing off and restores your proxy settings.</span></li>
       </ul>
     </div>
     <div class="flow reveal">
@@ -371,8 +371,8 @@
       <h2>Everything the window does, from your terminal.</h2>
       <p class="sub">The app puts <code>switcheroo</code> on your <code>PATH</code>. Script your rewrites, wire them into dev servers, or run the proxy headless.</p>
       <ul class="checks">
-        <li><span><b>Same binary</b> — give it a command and it runs in the terminal instead of opening a window.</span></li>
-        <li><span><b><code>switcheroo serve</code></b> — the proxy with no UI, for scripts and CI.</span></li>
+        <li><span><b>Same binary.</b> Give it a command and it runs in the terminal instead of opening a window.</span></li>
+        <li><span><b><code>switcheroo serve</code></b> runs the proxy with no UI, for scripts and CI.</span></li>
         <li><span><b><code>--json</code></b> output for anything you want to pipe.</span></li>
       </ul>
     </div>
@@ -397,7 +397,7 @@ System proxy off.</pre>
   <div class="wrap center reveal">
     <div class="eyebrow">Built right</div>
     <h2>Small. Native. Trustworthy.</h2>
-    <p class="sub">One Swift binary — the window, the proxy, and the CLI. Nothing else to install.</p>
+    <p class="sub">One Swift binary: the window, the proxy, and the CLI. Nothing else to install.</p>
   </div>
   <div class="wrap">
     <div class="grid4 reveal">
@@ -425,14 +425,14 @@ System proxy off.</pre>
     </details>
     <details>
       <summary>Why does it ask for my password on first launch?</summary>
-      <p>Once, to trust a local certificate authority so rewritten HTTPS pages load without warnings. It's only used for hosts you've added a rewrite for — everything else is tunneled without decryption.</p>
+      <p>Once, to trust a local certificate authority so rewritten HTTPS pages load without warnings. It's only used for hosts you've added a rewrite for. Everything else is tunneled without decryption.</p>
     </details>
     <details>
       <summary>I still see the old content. What's wrong?</summary>
       <p>Your browser probably cached it. Hard‑reload with ⌘⇧R. Check DevTools → Network for the <code>x-switcheroo</code> header to confirm a response was swapped.</p>
     </details>
     <details>
-      <summary>What's the difference between exact and <code>*</code> rewrites?</summary>
+      <summary><span>What's the difference between exact and <code>*</code> rewrites?</span></summary>
       <p><code>https://example.com/app.js</code> matches that one URL. <code>https://example.com/*</code> matches everything under it, and the rest of the path is appended to your target, e.g. <code>http://localhost:3000/</code>.</p>
     </details>
     <details>
@@ -441,7 +441,7 @@ System proxy off.</pre>
     </details>
     <details>
       <summary>How do I verify a download?</summary>
-      <p>Each release ships a <code>SHA256SUMS.txt</code> and a build‑provenance attestation. Run <code>shasum -a 256 -c SHA256SUMS.txt</code> and <code>gh attestation verify</code> — see the README for the exact commands.</p>
+      <p>Each release ships a <code>SHA256SUMS.txt</code> and a build‑provenance attestation. Run <code>shasum -a 256 -c SHA256SUMS.txt</code> and <code>gh attestation verify</code>. See the README for the exact commands.</p>
     </details>
   </div>
 </section>
@@ -460,7 +460,7 @@ System proxy off.</pre>
 
 <footer>
   <div class="wrap">
-    <span>© 2026 Switcheroo · Certificates by <a href="https://github.com/FiloSottile/mkcert">mkcert</a></span>
+    <span>© 2026 Switcheroo</span>
     <nav>
       <a href="https://github.com/MoienTajik/switcheroo">GitHub</a>
       <a href="https://github.com/MoienTajik/switcheroo/releases">Releases</a>
@@ -476,7 +476,7 @@ System proxy off.</pre>
 
   // Hero demo: auto-flip the proxy every few seconds; clicking takes over
   const stage = document.getElementById('stage'), hdr = document.getElementById('hdr');
-  const set = on => { stage.classList.toggle('on', on); hdr.textContent = on ? 'http://localhost:3000/app.js' : '—'; };
+  const set = on => { stage.classList.toggle('on', on); hdr.textContent = on ? 'http://localhost:3000/app.js' : '-'; };
   let auto = setInterval(() => set(!stage.classList.contains('on')), 3200);
   setTimeout(() => set(true), 1200);
   document.getElementById('toggle').onclick = () => { clearInterval(auto); set(!stage.classList.contains('on')); };
