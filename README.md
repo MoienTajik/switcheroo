@@ -20,8 +20,8 @@ Every release is built, signed, and notarized by GitHub Actions from the tagged 
 
 ```bash
 shasum -a 256 -c SHA256SUMS.txt                                  # checksum matches
-gh attestation verify Switcheroo-1.1.0.dmg --repo MoienTajik/switcheroo   # built by this repo's CI
-spctl -a -vvv -t open --context context:primary-signature Switcheroo-1.1.0.dmg   # Apple-notarized
+gh attestation verify Switcheroo-1.1.1.dmg --repo MoienTajik/switcheroo   # built by this repo's CI
+spctl -a -vvv -t open --context context:primary-signature Switcheroo-1.1.1.dmg   # Apple-notarized
 ```
 
 ## Use it
