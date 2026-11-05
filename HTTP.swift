@@ -56,15 +56,21 @@ enum HTTP {
     /// The response head for the client: `Connection: close`, plus `x-switcheroo` when the URL was swapped.
     /// A swapped response also loses Strict-Transport-Security: that policy belongs to the target, and the browser
     /// would otherwise pin it on the mapped host (and its subdomains) long after the rewrite is gone.
+    /// Likewise a swapped redirect is marked uncacheable: google.com's 301 is cacheable for 30 days, and a browser
+    /// that kept it would keep following it after the rule was edited or removed, never asking us again.
     static func clientResponseHead(_ head: Data, swappedTo: String?) -> Data {
         guard let text = String(data: head, encoding: latin1) else { return head + endOfHead }
         var lines = text.components(separatedBy: "\r\n")
         let status = lines.removeFirst()
+        let code = Int(status.split(separator: " ").dropFirst().first ?? "") ?? 0
+        let uncacheable = swappedTo != nil && [301, 302, 303, 307, 308].contains(code)
         lines.removeAll {
             let l = $0.lowercased()
             return l.hasPrefix("connection:") || l.hasPrefix("keep-alive:") || l.hasPrefix("proxy-connection:")
                 || (swappedTo != nil && l.hasPrefix("strict-transport-security:"))
+                || (uncacheable && ["cache-control:", "expires:", "pragma:", "etag:", "last-modified:", "age:"].contains { l.hasPrefix($0) })
         }
+        if uncacheable { lines.append("Cache-Control: no-store") }
         lines.append("Connection: close")
         if let t = swappedTo { lines.append("x-switcheroo: \(t)") }
         let out = ([status] + lines).joined(separator: "\r\n") + "\r\n\r\n"

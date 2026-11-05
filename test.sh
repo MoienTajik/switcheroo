@@ -102,6 +102,14 @@ python3 - "$HSTS" <<'PY' &
 import http.server, sys
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path == "/redir":
+            self.send_response(301)
+            self.send_header("Location", "/elsewhere")
+            self.send_header("Cache-Control", "public, max-age=2592000")
+            self.send_header("Expires", "Sat, 05 Dec 2026 13:38:04 GMT")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         self.send_response(200)
         self.send_header("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
         self.send_header("Content-Length", "2")
@@ -115,6 +123,14 @@ sleep 0.7
 sw add http://pinned.test/ "http://127.0.0.1:$HSTS/" >/dev/null
 lacks "swapped response doesn't pin the target's HSTS on the mapped host" "strict-transport-security" "$(curlx -i http://pinned.test/ | tr 'A-Z' 'a-z')"
 has "unswapped response keeps its HSTS" "strict-transport-security" "$(curlx -i "http://127.0.0.1:$HSTS/" | tr 'A-Z' 'a-z')"
+sw add http://redirects.test/ "http://127.0.0.1:$HSTS/redir" >/dev/null
+r="$(curlx -i http://redirects.test/ | tr 'A-Z' 'a-z')"
+has "swapped redirect still redirects" "location: /elsewhere" "$r"
+has "swapped redirect is marked no-store" "cache-control: no-store" "$r"
+lacks "swapped redirect drops the target's max-age" "max-age" "$r"
+lacks "swapped redirect drops Expires" "expires:" "$r"
+r="$(curlx -i "http://127.0.0.1:$HSTS/redir" | tr 'A-Z' 'a-z')"
+has "unswapped redirect keeps its caching" "max-age=2592000" "$r"
 { kill "$HSTSPID"; wait "$HSTSPID"; } 2>/dev/null
 
 echo "Local API guards"
