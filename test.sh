@@ -46,6 +46,22 @@ has "unknown command" "Unknown command" "$(sw frobnicate)"
 has "help" "switcheroo list" "$(sw help)"
 sw remove 'https://example.com/*' >/dev/null
 
+echo "Editing rewrites"
+sw add https://one.test/ http://localhost:1/ >/dev/null
+sw add https://two.test/ http://localhost:2/ >/dev/null
+has "edit --to" "Updated  https://one.test/  →  http://localhost:9/" "$(sw edit https://one.test/ --to http://localhost:9)"
+has "edit --from" "Updated  https://uno.test/  →  http://localhost:9/" "$(sw edit https://one.test/ --from https://UNO.test)"
+has "edit keeps the rule's position" "uno.test" "$(sw list | head -1)"
+lacks "edit replaces the old rule" "one.test" "$(sw list)"
+has "edit --www" "+www" "$(sw edit https://uno.test/ --www)"
+has "edit leaves www alone unless asked" "+www" "$(sw edit https://uno.test/ --to http://localhost:8/)"
+lacks "edit --no-www" "+www" "$(sw edit https://uno.test/ --no-www)"
+has "edit can't take another rule's URL" "already exists" "$(sw edit https://uno.test/ --from https://two.test/)"
+has "edit missing rule" "No rewrite matches" "$(sw edit https://nope.test/ --to http://x/)"
+has "edit with no change asked" "Usage: switcheroo edit" "$(sw edit https://uno.test/)"
+has "edit validates the new URL" "Not an http(s) URL" "$(sw edit https://uno.test/ --to ftp://x/)"
+sw rm https://uno.test/ >/dev/null; sw rm https://two.test/ >/dev/null
+
 echo "Plain HTTP through the proxy"
 PAC="$PROXY/proxy.pac"
 sw add http://exact.test/page "$PAC" >/dev/null
@@ -65,6 +81,42 @@ has "large POST (Expect: 100-continue)" "FindProxyForURL" "$(curlx -d @"$TMP/big
 sw add http://down.test/ http://127.0.0.1:1/ >/dev/null
 has "unreachable target -> 502" "502" "$(curlx -o /dev/null -w '%{http_code}' http://down.test/)"
 
+echo "www option"
+sw add 'http://bare.test/*' "$PROXY/" --www >/dev/null
+has "list marks it" "+www" "$(sw list)"
+has "list --json carries it" '"www" : true' "$(sw list --json)"
+has "--www: www is covered" "FindProxyForURL" "$(curlx http://www.bare.test/proxy.pac)"
+has "--www: the bare host still works" "FindProxyForURL" "$(curlx http://bare.test/proxy.pac)"
+sw add http://www.dotted.test/page "$PAC" --www >/dev/null
+has "--www on a www rule covers the bare host" "FindProxyForURL" "$(curlx http://dotted.test/page)"
+lacks "--www on an exact rule stays exact" "x-switcheroo" "$(curlx -i http://dotted.test/other | tr 'A-Z' 'a-z')"
+sw add 'http://plain.test/*' "$PROXY/" >/dev/null
+lacks "no --www: www is not covered" "x-switcheroo" "$(curlx -i http://www.plain.test/proxy.pac | tr 'A-Z' 'a-z')"
+sw add 'http://www.bare.test/*' http://127.0.0.1:1/ >/dev/null
+has "a rule written for www beats the twin of another" "502" "$(curlx -o /dev/null -w '%{http_code}' http://www.bare.test/proxy.pac)"
+sw rm 'http://www.bare.test/*' >/dev/null
+
+echo "Swapped response headers"
+HSTS=$((PORT + 2))
+python3 - "$HSTS" <<'PY' &
+import http.server, sys
+class H(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+        self.send_header("Content-Length", "2")
+        self.end_headers()
+        self.wfile.write(b"ok")
+    def log_message(self, *a): pass
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+PY
+HSTSPID=$!
+sleep 0.7
+sw add http://pinned.test/ "http://127.0.0.1:$HSTS/" >/dev/null
+lacks "swapped response doesn't pin the target's HSTS on the mapped host" "strict-transport-security" "$(curlx -i http://pinned.test/ | tr 'A-Z' 'a-z')"
+has "unswapped response keeps its HSTS" "strict-transport-security" "$(curlx -i "http://127.0.0.1:$HSTS/" | tr 'A-Z' 'a-z')"
+{ kill "$HSTSPID"; wait "$HSTSPID"; } 2>/dev/null
+
 echo "Local API guards"
 has "wrong Host is refused" "403" "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.test' "$PROXY/api/mappings")"
 has "non-JSON write is refused" "415" "$(curl -s -o /dev/null -w '%{http_code}' -X POST -d 'from=x' "$PROXY/api/mappings")"
@@ -80,6 +132,8 @@ if command -v mkcert >/dev/null && [ -f "$CAROOT/rootCA.pem" ]; then
   has "mapped host: HTTPS is decrypted and swapped" "FindProxyForURL" "$r"
   has "mapped host: response is marked" "x-switcheroo: $PAC" "$(printf '%s' "$r" | tr 'A-Z' 'a-z')"
   has "mapped host: POST over HTTPS" "FindProxyForURL" "$(curlx -d hello --cacert "$CAROOT/rootCA.pem" https://secure.test/)"
+  sw add 'https://securewww.test/*' "$PROXY/" --www >/dev/null
+  has "--www: HTTPS to www is decrypted and swapped" "FindProxyForURL" "$(curlx --cacert "$CAROOT/rootCA.pem" https://www.securewww.test/proxy.pac)"
 else
   echo "  skip  mapped-host HTTPS (needs mkcert and its CA: run 'mkcert -install')"
 fi
@@ -122,6 +176,19 @@ before="$(sw list --json)"
 stop; start
 [ "$(sw list --json)" = "$before" ] && ok "rewrites survive a restart" || fail "rewrites lost after restart"
 r="$("$BIN" serve --no-proxy 2>&1)"; has "second instance is refused" "already serving" "$r"
+stop
+printf '[{"from":"http://old.test/","to":"http://localhost:1/"}]' > "$SWITCHEROO_HOME/mappings.json"
+start
+has "a file from before the www option still loads" "old.test" "$(sw list)"
+lacks "and its rules don't cover www" "+www" "$(sw list)"
+
+echo "Version"
+APPDIR="$TMP/V.app/Contents"; mkdir -p "$APPDIR/MacOS" "$APPDIR/Resources"
+cp "$BIN" "$APPDIR/MacOS/switcheroo"
+printf '<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleShortVersionString</key><string>9.8.7</string><key>CFBundleExecutable</key><string>switcheroo</string></dict></plist>' > "$APPDIR/Info.plist"
+ln -s "$APPDIR/MacOS/switcheroo" "$TMP/vlink"
+has "--version from the app" "9.8.7" "$("$APPDIR/MacOS/switcheroo" --version)"
+has "--version through the PATH link" "9.8.7" "$("$TMP/vlink" --version)"
 
 echo "PATH installer"
 BINDIR="$TMP/bin"; mkdir -p "$BINDIR"

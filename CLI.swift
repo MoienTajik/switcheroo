@@ -12,7 +12,11 @@ enum CLI {
         return !first.hasPrefix("-") || first == "-h" || first == "--help" || first == "-v" || first == "--version"
     }
 
-    struct Flags { var json = false, noProxy = false, quiet = false }
+    struct Flags {
+        var json = false, noProxy = false, quiet = false
+        var www: Bool?                // --www / --no-www
+        var from: String?, to: String?   // edit's --from / --to
+    }
 
     private static let color = isatty(STDOUT_FILENO) == 1 && ProcessInfo.processInfo.environment["NO_COLOR"] == nil
     private static func paint(_ code: String, _ s: String) -> String { color ? "\u{1B}[\(code)m\(s)\u{1B}[0m" : s }
@@ -22,15 +26,23 @@ enum CLI {
 
     static func run(_ args: [String]) -> Int32 {
         let argv = Array(args.dropFirst())
-        let flags = Flags(json: argv.contains("--json"), noProxy: argv.contains("--no-proxy"), quiet: argv.contains("--quiet"))
-        let words = argv.filter { !$0.hasPrefix("--") && $0 != "-h" }
+        let value = { (name: String) -> String? in
+            argv.firstIndex(of: name).flatMap { $0 + 1 < argv.count ? argv[$0 + 1] : nil }
+        }
+        let flags = Flags(json: argv.contains("--json"), noProxy: argv.contains("--no-proxy"), quiet: argv.contains("--quiet"),
+                          www: argv.contains("--no-www") ? false : argv.contains("--www") ? true : nil,
+                          from: value("--from"), to: value("--to"))
+        let words = argv.indices.filter { i in
+            !argv[i].hasPrefix("--") && argv[i] != "-h" && !(i > 0 && ["--from", "--to"].contains(argv[i - 1]))
+        }.map { argv[$0] }
         do {
             if argv.contains("-v") || argv.contains("--version") || words.first == "version" { print(Config.version); return 0 }
             guard let cmd = words.first, !argv.contains("-h"), !argv.contains("--help") else { print(help); return 0 }
             let rest = Array(words.dropFirst())
             switch cmd {
             case "list", "ls": try list(flags)
-            case "add": try add(rest)
+            case "add": try add(rest, flags)
+            case "edit": try edit(rest, flags)
             case "remove", "rm": try remove(rest)
             case "on", "off": try proxy(cmd)
             case "proxy": try proxy(rest.first ?? "")
@@ -54,7 +66,7 @@ enum CLI {
         var errorDescription: String? { "Switcheroo isn't running. Start it with `switcheroo open` (app) or `switcheroo serve` (no window)." }
     }
 
-    private static func api(_ method: String, _ body: [String: String]? = nil) throws -> [Mapping] {
+    private static func api(_ method: String, _ body: [String: Any]? = nil) throws -> [Mapping] {
         var req = URLRequest(url: URL(string: "http://127.0.0.1:\(Config.port)/api/mappings")!,
                              cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 5)
         req.httpMethod = method
@@ -86,24 +98,38 @@ enum CLI {
     private static func list(_ flags: Flags) throws {
         let rows = try api("GET")
         if flags.json {
-            let json = rows.map { ["from": $0.from, "to": $0.to] }
-            let data = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .withoutEscapingSlashes, .sortedKeys])
-            return print(String(decoding: data, as: UTF8.self))
+            return print(String(decoding: encodeMappings(rows), as: UTF8.self))
         }
         if rows.isEmpty { return print(dim("No rewrites yet. Add one: switcheroo add 'https://example.com/*' http://localhost:3000/")) }
         let width = rows.map { $0.from.count }.max() ?? 0
         for r in rows {
             let kind = r.from.hasSuffix("*") ? accent("path ") : dim("exact")
-            print("\(kind)  \(r.from.padding(toLength: width, withPad: " ", startingAt: 0))  \(dim("→"))  \(r.to)")
+            print("\(kind)  \(r.from.padding(toLength: width, withPad: " ", startingAt: 0))  \(dim("→"))  \(describe(r))")
         }
     }
 
-    private static func add(_ a: [String]) throws {
-        guard a.count >= 2 else { throw SwitcherooError("Usage: switcheroo add <from> <to>   (quote a trailing * so your shell doesn't expand it)") }
-        let rows = try api("POST", ["from": a[0], "to": a[1]])
+    private static func describe(_ r: Mapping) -> String { r.to + (r.coversWWW ? dim("  +www") : "") }
+
+    private static func add(_ a: [String], _ flags: Flags) throws {
+        guard a.count >= 2 else { throw SwitcherooError("Usage: switcheroo add <from> <to> [--www]   (quote a trailing * so your shell doesn't expand it)") }
+        let rows = try api("POST", ["from": a[0], "to": a[1], "www": flags.www ?? false])
         guard let r = rows.last else { return }   // the new (normalized) rewrite goes last
-        print("Added  \(r.from)  \(dim("→"))  \(r.to)")
+        print("Added  \(r.from)  \(dim("→"))  \(describe(r))")
         print(dim("\(rows.count) rewrite\(rows.count == 1 ? "" : "s")"))
+    }
+
+    /// Anything not passed keeps its current value.
+    private static func edit(_ a: [String], _ flags: Flags) throws {
+        guard let first = a.first, flags.from != nil || flags.to != nil || flags.www != nil else {
+            throw SwitcherooError("Usage: switcheroo edit <from> [--from <url>] [--to <url>] [--www | --no-www]")
+        }
+        let original = try normalizeURL(first)
+        guard let current = try api("GET").first(where: { $0.from == original }) else { throw SwitcherooError("No rewrite matches \(first)") }
+        let from = flags.from ?? current.from
+        let rows = try api("PUT", ["original": original, "from": from, "to": flags.to ?? current.to, "www": flags.www ?? current.coversWWW])
+        let saved = try normalizeURL(from)
+        guard let r = rows.first(where: { $0.from == saved }) else { return }
+        print("Updated  \(r.from)  \(dim("→"))  \(describe(r))")
     }
 
     private static func remove(_ a: [String]) throws {
@@ -230,7 +256,10 @@ enum CLI {
 
     \(bold("Rewrites"))
       switcheroo list [--json]            show all rewrites
-      switcheroo add <from> <to>          add one (a trailing * on <from> maps a whole path)
+      switcheroo add <from> <to> [--www]  add one (a trailing * on <from> maps a whole path;
+                                          --www also matches <from> with www. added or removed)
+      switcheroo edit <from> [--from <url>] [--to <url>] [--www | --no-www]
+                                          change one; anything not passed stays as it is
       switcheroo remove <from>            remove one (alias: rm)
 
     \(bold("System proxy"))

@@ -54,6 +54,8 @@ enum HTTP {
     }
 
     /// The response head for the client: `Connection: close`, plus `x-switcheroo` when the URL was swapped.
+    /// A swapped response also loses Strict-Transport-Security: that policy belongs to the target, and the browser
+    /// would otherwise pin it on the mapped host (and its subdomains) long after the rewrite is gone.
     static func clientResponseHead(_ head: Data, swappedTo: String?) -> Data {
         guard let text = String(data: head, encoding: latin1) else { return head + endOfHead }
         var lines = text.components(separatedBy: "\r\n")
@@ -61,6 +63,7 @@ enum HTTP {
         lines.removeAll {
             let l = $0.lowercased()
             return l.hasPrefix("connection:") || l.hasPrefix("keep-alive:") || l.hasPrefix("proxy-connection:")
+                || (swappedTo != nil && l.hasPrefix("strict-transport-security:"))
         }
         lines.append("Connection: close")
         if let t = swappedTo { lines.append("x-switcheroo: \(t)") }

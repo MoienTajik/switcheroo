@@ -27,7 +27,7 @@ struct APIError: LocalizedError { let message: String; var errorDescription: Str
 final class Store {
     private let url = URL(string: "http://127.0.0.1:\(Config.port)/api/mappings")!
 
-    func request(_ method: String, body: [String: String]? = nil, done: @escaping (Result<[Mapping], Error>) -> Void) {
+    func request(_ method: String, body: [String: Any]? = nil, done: @escaping (Result<[Mapping], Error>) -> Void) {
         var r = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
         r.httpMethod = method
         if let body {
@@ -95,6 +95,38 @@ final class ProxyPill: NSView {
         NSBezierPath(roundedRect: track, xRadius: 10, yRadius: 10).fill()
         NSColor.white.setFill()
         NSBezierPath(ovalIn: NSRect(x: track.minX + (on ? 16 : 2), y: track.minY + 2, width: 16, height: 16)).fill()
+    }
+}
+
+/// Small on/off switch in the app's palette (NSSwitch would use the system blue). Same track as the proxy pill's.
+final class ToggleSwitch: NSControl {
+    var state: NSControl.StateValue = .off { didSet { needsDisplay = true } }
+
+    override init(frame: NSRect) {
+        super.init(frame: NSRect(x: 0, y: 0, width: 34, height: 20))
+        setAccessibilityElement(true)
+        setAccessibilityRole(.checkBox)
+        setAccessibilityLabel("Also match www")
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 34, height: 20) }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { toggle() }
+    override func accessibilityPerformPress() -> Bool { toggle(); return true }
+    override func accessibilityValue() -> Any? { state == .on ? 1 : 0 }
+
+    private func toggle() {
+        state = state == .on ? .off : .on
+        sendAction(action, to: target)
+    }
+
+    override func draw(_ dirty: NSRect) {
+        let on = state == .on
+        (on ? P.accent : P.trackOff).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 10, yRadius: 10).fill()
+        NSColor.white.setFill()
+        NSBezierPath(ovalIn: NSRect(x: on ? 16 : 2, y: 2, width: 16, height: 16)).fill()
     }
 }
 
@@ -235,9 +267,11 @@ final class RewriteCell: NSTableCellView {
     private let from = NSTextField(labelWithString: "")
     private let to = NSTextField(labelWithString: "")
     private let kind = NSTextField(labelWithString: "")
+    private let edit = NSButton()
     private let remove = NSButton()
     private var armed = false
     private var timer: Timer?
+    var onEdit: (() -> Void)?
     var onRemove: (() -> Void)?
     var showSeparator = true { didSet { needsDisplay = true } }
 
@@ -266,20 +300,31 @@ final class RewriteCell: NSTableCellView {
         remove.setAccessibilityLabel("Remove rewrite")
         showRemove(armed: false)
 
+        edit.isBordered = false
+        edit.target = self
+        edit.action = #selector(tapEdit)
+        edit.setContentHuggingPriority(.required, for: .horizontal)
+        edit.setAccessibilityLabel("Edit rewrite")
+
+        let actions = NSStackView(views: [edit, remove])
+        actions.orientation = .horizontal
+        actions.spacing = 14
+        actions.setContentHuggingPriority(.required, for: .horizontal)
+
         let texts = NSStackView(views: [from, to, kind])
         texts.orientation = .vertical
         texts.alignment = .leading
         texts.spacing = 2
         texts.setCustomSpacing(7, after: to)
         texts.translatesAutoresizingMaskIntoConstraints = false
-        remove.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(texts); addSubview(remove)
+        actions.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(texts); addSubview(actions)
         NSLayoutConstraint.activate([
             texts.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
             texts.centerYAnchor.constraint(equalTo: centerYAnchor),
-            texts.trailingAnchor.constraint(lessThanOrEqualTo: remove.leadingAnchor, constant: -12),
-            remove.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            remove.centerYAnchor.constraint(equalTo: centerYAnchor),
+            texts.trailingAnchor.constraint(lessThanOrEqualTo: actions.leadingAnchor, constant: -12),
+            actions.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            actions.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -289,7 +334,11 @@ final class RewriteCell: NSTableCellView {
         timer?.invalidate(); armed = false; showRemove(armed: false)
     }
 
-    func configure(_ m: Mapping) {
+    func configure(_ m: Mapping, editing: Bool) {
+        edit.attributedTitle = NSAttributedString(string: editing ? "Editing" : "Edit", attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: editing ? .bold : .medium),
+            .foregroundColor: editing ? P.accentText : P.ink2,
+        ])
         let prefix = m.from.hasSuffix("*")
         from.stringValue = m.from; from.toolTip = m.from
         to.stringValue = "→ " + m.to; to.toolTip = m.to
@@ -297,7 +346,7 @@ final class RewriteCell: NSTableCellView {
             .font: NSFont.systemFont(ofSize: 7), .foregroundColor: prefix ? P.accent : P.faint,
             .baselineOffset: 1,
         ])
-        s.append(NSAttributedString(string: prefix ? "WHOLE PATH" : "EXACT MATCH", attributes: [
+        s.append(NSAttributedString(string: (prefix ? "WHOLE PATH" : "EXACT MATCH") + (m.coversWWW ? "  ·  ALSO WWW" : ""), attributes: [
             .font: NSFont.systemFont(ofSize: 10, weight: .semibold), .foregroundColor: P.ink2, .kern: 1.0,
         ]))
         kind.attributedStringValue = s
@@ -309,6 +358,8 @@ final class RewriteCell: NSTableCellView {
             .foregroundColor: armed ? P.accentText : P.ink2,
         ])
     }
+
+    @objc private func tapEdit() { onEdit?() }
 
     @objc private func tapRemove() {
         if armed { timer?.invalidate(); onRemove?(); return }
@@ -326,12 +377,16 @@ final class RewriteCell: NSTableCellView {
 final class MainViewController: NSViewController, NSTextFieldDelegate, NSTableViewDataSource, NSTableViewDelegate {
     private let store = Store()
     private var mappings: [Mapping] = []
+    /// The rewrite the form is editing; nil when the form adds a new one.
+    private var editing: Mapping?
 
     private let fromShell = FieldShell(placeholder: "https://example.com/app.js")
     private let toShell = FieldShell(placeholder: "http://localhost:3000/app.js")
     private var fromField: URLField { fromShell.field }
     private var toField: URLField { toShell.field }
     private let addButton = AccentButton()
+    private let cancelButton = NSButton()
+    private let wwwSwitch = ToggleSwitch()
     private let column = NSLayoutGuide()
     private lazy var columnLeading = column.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 24)
     private lazy var columnTrailing = column.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -24)
@@ -385,7 +440,7 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSTableVi
         let field = shell.field
         field.delegate = self
         field.target = self
-        field.action = #selector(add)
+        field.action = #selector(submit)
         field.setAccessibilityLabel(title)
         let s = NSStackView(views: [caption(title), shell])
         s.orientation = .vertical
@@ -401,12 +456,21 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSTableVi
         let g2 = group("With", toShell)
 
         addButton.target = self
-        addButton.action = #selector(add)
-        addButton.attributedTitle = NSAttributedString(string: "+  Add rewrite", attributes: [
-            .font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: P.onAccent,
-        ])
+        addButton.action = #selector(submit)
+        setAddButtonTitle("+  Add rewrite")
 
-        let form = NSStackView(views: [g1, g2, addButton])
+        cancelButton.isBordered = false
+        cancelButton.target = self
+        cancelButton.action = #selector(cancelEdit)
+        cancelButton.isHidden = true
+        cancelButton.attributedTitle = NSAttributedString(string: "Cancel", attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: P.ink2,
+        ])
+        cancelButton.setContentHuggingPriority(.required, for: .horizontal)
+        cancelButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        cancelButton.heightAnchor.constraint(equalToConstant: 40).isActive = true
+
+        let form = NSStackView(views: [g1, g2, cancelButton, addButton])
         form.orientation = .horizontal
         form.alignment = .bottom
         form.spacing = 12
@@ -414,7 +478,7 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSTableVi
         for g in [g1, g2] { g.setContentHuggingPriority(.init(1), for: .horizontal) }
         form.distribution = .fill
 
-        let tip = NSTextField(wrappingLabelWithString: "")
+        let tip = NSTextField(labelWithString: "")
         let t = NSMutableAttributedString(string: "End the first URL with ", attributes: [
             .font: NSFont.systemFont(ofSize: 13), .foregroundColor: P.ink2,
         ])
@@ -424,16 +488,27 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSTableVi
         ]))
         tip.attributedStringValue = t
         tip.alignment = .left
+        tip.setContentHuggingPriority(.init(1), for: .horizontal)
+        tip.setContentCompressionResistancePriority(.init(1), for: .horizontal)
+
+        let wwwLabel = NSTextField(labelWithString: "Also match www")
+        wwwLabel.font = .systemFont(ofSize: 13)
+        wwwLabel.textColor = P.ink2
+        wwwLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let options = NSStackView(views: [tip, wwwLabel, wwwSwitch])
+        options.orientation = .horizontal
+        options.alignment = .centerY
+        options.spacing = 8
 
         errorLabel.font = .systemFont(ofSize: 13)
         errorLabel.textColor = P.accentText
         errorLabel.isHidden = true
 
-        let top = NSStackView(views: [form, tip, errorLabel])
+        let top = NSStackView(views: [form, options, errorLabel])
         top.orientation = .vertical
         top.alignment = .leading
         top.spacing = 10
-        for v in [form, tip, errorLabel] {
+        for v in [form, options, errorLabel] {
             v.translatesAutoresizingMaskIntoConstraints = false
             v.widthAnchor.constraint(equalTo: top.widthAnchor).isActive = true
         }
@@ -557,6 +632,8 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSTableVi
 
     private func apply(_ m: [Mapping]) {
         mappings = m
+        // The rewrite being edited is gone (removed here or from the CLI): nothing left to save to.
+        if let e = editing, !m.contains(where: { $0.from == e.from }) { editing = nil; resetForm() }
         table.reloadData()
         countLabel.stringValue = m.isEmpty ? "" : "\(m.count)"
         empty.isHidden = !m.isEmpty
@@ -581,19 +658,62 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSTableVi
         }
     }
 
-    @objc private func add() {
+    private func setAddButtonTitle(_ title: String) {
+        addButton.attributedTitle = NSAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: 14, weight: .semibold), .foregroundColor: P.onAccent,
+        ])
+    }
+
+    /// Back to an empty form that adds a new rewrite.
+    private func resetForm() {
+        fromField.stringValue = ""
+        toField.stringValue = ""
+        wwwSwitch.state = .off
+        cancelButton.isHidden = true
+        setAddButtonTitle("+  Add rewrite")
+        view.window?.makeFirstResponder(fromField)
+    }
+
+    private func beginEdit(_ m: Mapping) {
+        clearError()
+        editing = m
+        fromField.stringValue = m.from
+        toField.stringValue = m.to
+        wwwSwitch.state = m.coversWWW ? .on : .off
+        cancelButton.isHidden = false
+        setAddButtonTitle("Save changes")
+        table.reloadData()
+        view.window?.makeFirstResponder(fromField)
+    }
+
+    @objc private func cancelEdit() {
+        clearError()
+        editing = nil
+        resetForm()
+        table.reloadData()
+    }
+
+    /// Esc in either field cancels an edit.
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy selector: Selector) -> Bool {
+        guard selector == #selector(NSResponder.cancelOperation(_:)), editing != nil else { return false }
+        cancelEdit()
+        return true
+    }
+
+    @objc private func submit() {
         clearError()
         let f = fromField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let t = toField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !f.isEmpty, !t.isEmpty else { showError("Both URLs are required."); return }
-        store.request("POST", body: ["from": f, "to": t]) { [weak self] r in
+        var body: [String: Any] = ["from": f, "to": t, "www": wwwSwitch.state == .on]
+        if let e = editing { body["original"] = e.from }
+        store.request(editing == nil ? "POST" : "PUT", body: body) { [weak self] r in
             guard let self else { return }
             switch r {
             case .success(let m):
+                self.editing = nil
                 self.apply(m)
-                self.fromField.stringValue = ""
-                self.toField.stringValue = ""
-                self.view.window?.makeFirstResponder(self.fromField)
+                self.resetForm()
             case .failure(let e): self.showError(e.localizedDescription)
             }
         }
@@ -626,7 +746,8 @@ final class MainViewController: NSViewController, NSTextFieldDelegate, NSTableVi
         let cell = tableView.makeView(withIdentifier: RewriteCell.id, owner: nil) as? RewriteCell
             ?? RewriteCell(frame: .zero)
         let m = mappings[row]
-        cell.configure(m)
+        cell.configure(m, editing: editing?.from == m.from)
+        cell.onEdit = { [weak self] in self?.beginEdit(m) }
         cell.showSeparator = row < mappings.count - 1
         cell.onRemove = { [weak self] in self?.remove(m) }
         return cell

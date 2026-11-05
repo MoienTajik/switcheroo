@@ -258,6 +258,20 @@ final class ClientSession {
 
     // MARK: forwarding
 
+    /// Parameters for a connection to a real server. We ARE the system proxy, so these must never loop back into
+    /// ourselves. `preferNoProxies` alone isn't enough: for plain HTTP macOS still sent the connection to the PAC's
+    /// proxy (us), which answered 403. Barring the loopback interface keeps it off that path. Local targets
+    /// (localhost, LAN) need loopback and are exempt in the PAC file anyway, so they keep the defaults.
+    static func upstreamParams(tls: Bool, host: String) -> NWParameters {
+        let p: NWParameters = tls ? .tls : .tcp
+        p.preferNoProxies = true
+        let h = host.lowercased()
+        let local = h == "localhost" || h.hasSuffix(".localhost") || h.hasSuffix(".local") || !h.contains(".")
+            || h.hasPrefix("127.") || h.hasPrefix("10.") || h.hasPrefix("192.168.") || h.hasPrefix("[") || h.contains(":")
+        if !local { p.prohibitedInterfaceTypes = [.loopback] }
+        return p
+    }
+
     /// Sends the request to its real destination, or to the rewrite's target, and relays the response.
     private func forward(to originalURL: String, _ req: RequestHead, rest: Data) {
         let swapped = (try? normalizeURL(originalURL)).flatMap { server.store.resolve($0) }
@@ -271,8 +285,7 @@ final class ClientSession {
         let hostHeader = c.port.map { "\(host):\($0)" } ?? host
         guard let p = NWEndpoint.Port(rawValue: UInt16(truncatingIfNeeded: port)) else { return reply(502, "Switcheroo: bad port in \(target)") }
 
-        let params: NWParameters = tls ? .tls : .tcp
-        params.preferNoProxies = true   // we ARE the system proxy: never loop back into ourselves
+        let params = Self.upstreamParams(tls: tls, host: host)
         let up = NWConnection(host: NWEndpoint.Host(host), port: p, using: params)
         peer = up
         touch()
@@ -351,8 +364,7 @@ final class ClientSession {
                 }
             }
         } else {
-            let params = NWParameters.tcp
-            params.preferNoProxies = true
+            let params = Self.upstreamParams(tls: false, host: host)
             tunnel(to: NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port)!, using: params), initial: rest)
         }
     }
@@ -427,7 +439,7 @@ final class ClientSession {
     private func api(_ req: RequestHead, rest: Data) {
         let method = req.method.uppercased()
         if method == "GET" { return sendMappings(server.store.all) }
-        guard method == "POST" || method == "DELETE" else { return sendJSON(405, ["error": "Method not allowed"]) }
+        guard ["POST", "PUT", "DELETE"].contains(method) else { return sendJSON(405, ["error": "Method not allowed"]) }
         // JSON-only forces a CORS preflight, so other sites open in the browser can't change rewrites.
         guard (req.value("content-type") ?? "").lowercased().hasPrefix("application/json") else {
             return sendJSON(415, ["error": "JSON only"])
@@ -438,13 +450,13 @@ final class ClientSession {
             guard let obj = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any], let from = obj["from"] as? String else {
                 return sendJSON(400, ["error": "Expected JSON like {\"from\": \"...\", \"to\": \"...\"}"])
             }
+            let www = obj["www"] as? Bool ?? false
             do {
-                if method == "POST" {
-                    guard let to = obj["to"] as? String else { return sendJSON(400, ["error": "Missing \"to\""]) }
-                    sendMappings(try server.store.add(from: from, to: to))
-                } else {
-                    sendMappings(try server.store.remove(from: from))
-                }
+                if method == "DELETE" { return sendMappings(try server.store.remove(from: from)) }
+                guard let to = obj["to"] as? String else { return sendJSON(400, ["error": "Missing \"to\""]) }
+                if method == "POST" { return sendMappings(try server.store.add(from: from, to: to, www: www)) }
+                guard let original = obj["original"] as? String else { return sendJSON(400, ["error": "Missing \"original\""]) }
+                sendMappings(try server.store.update(original: original, from: from, to: to, www: www))
             } catch {
                 sendJSON(400, ["error": error.localizedDescription])
             }
@@ -472,5 +484,5 @@ final class ClientSession {
         send(status, "application/json", body)
     }
 
-    private func sendMappings(_ list: [Mapping]) { sendJSON(200, list.map { ["from": $0.from, "to": $0.to] }) }
+    private func sendMappings(_ list: [Mapping]) { send(200, "application/json", encodeMappings(list)) }
 }

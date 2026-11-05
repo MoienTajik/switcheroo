@@ -26,8 +26,9 @@ enum Config {
 
     /// GitHub repo for the auto-updater (owner/name).
     static let repo = "MoienTajik/switcheroo"
-    /// This build's version, from Info.plist (CFBundleShortVersionString).
-    static let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+    /// This build's version, from the app's Info.plist. Read by path because Bundle.main doesn't find the
+    /// bundle when the binary is run through the `switcheroo` link on PATH.
+    static let version = NSDictionary(contentsOfFile: resources + "/../Info.plist")?["CFBundleShortVersionString"] as? String ?? "0.0.0"
 }
 
 /// Finds a helper binary: the copy bundled in the app first, then the usual Homebrew locations.

@@ -31,6 +31,8 @@ Add a pair in the window:
 - **Replace** `https://example.com/app.js` (exact match) or `https://example.com/*` (everything under it)
 - **With** `http://localhost:3000/app.js`, or `http://localhost:3000/` for a `*` rewrite
 
+Turn on **Also match www** to cover the same URL with `www.` added or removed, so one rule handles both `example.com` and `www.example.com`. Click **Edit** on a rewrite to load it back into the form, then **Save changes** (Esc cancels).
+
 Changes apply immediately. The **Proxy** switch in the title bar turns routing on and off; quitting turns it off and restores your proxy settings.
 
 - Swapped responses carry an `x-switcheroo` header naming the URL they came from (DevTools → Network).
@@ -43,7 +45,8 @@ Everything the window does, from the terminal. The app adds `switcheroo` to your
 
 ```bash
 switcheroo list [--json]                         # show rewrites
-switcheroo add 'https://example.com/*' http://localhost:3000/
+switcheroo add 'https://example.com/*' http://localhost:3000/ --www   # --www: also match www.example.com
+switcheroo edit 'https://example.com/*' --to http://localhost:4000/ --no-www   # also --from, --www
 switcheroo remove 'https://example.com/*'
 switcheroo on | off                              # system proxy, same as the title-bar switch
 switcheroo status                                # server, system proxy, rewrite count
@@ -52,7 +55,7 @@ switcheroo open                                  # launch the app
 switcheroo --version
 ```
 
-Quote URLs ending in `*` so your shell doesn't expand them. `list`, `add`, and `remove` need the proxy running (the app, or `switcheroo serve`). To remove the command and stop the app re‑adding it:
+Quote URLs ending in `*` so your shell doesn't expand them. `list`, `add`, `edit`, and `remove` need the proxy running (the app, or `switcheroo serve`). To remove the command and stop the app re‑adding it:
 
 ```bash
 rm "$(which switcheroo)"
